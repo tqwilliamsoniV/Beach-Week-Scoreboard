@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { LogGameForm } from './LogGameForm'
 import { BottomNav } from '@/components/BottomNav'
 
+export const dynamic = 'force-dynamic'
+
 export default async function LogGamePage() {
   const supabase = createClient()
   const [{ data: games }, { data: players }] = await Promise.all([

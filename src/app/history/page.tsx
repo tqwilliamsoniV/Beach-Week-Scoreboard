@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { GameHistory } from './GameHistory'
 import { BottomNav } from '@/components/BottomNav'
 
+export const dynamic = 'force-dynamic'
+
 export default async function HistoryPage() {
   const supabase = createClient()
   const [{ data: results }, { data: games }, { data: players }] = await Promise.all([

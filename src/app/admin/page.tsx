@@ -2,6 +2,8 @@ import { createClient } from '@/lib/supabase/server'
 import { AdminPanel } from './AdminPanel'
 import { BottomNav } from '@/components/BottomNav'
 
+export const dynamic = 'force-dynamic'
+
 export default async function AdminPage() {
   const supabase = createClient()
   const [{ data: games }, { data: players }, { data: settings }] = await Promise.all([
