@@ -31,30 +31,35 @@ export default function RegisterPage() {
     }
 
     setLoading(true)
-    const supabase  = createClient()
-    const fakeEmail = `${displayName.trim().toLowerCase().replace(/\s+/g, '.')}@beachweek.local`
 
-    const { error: signUpErr } = await supabase.auth.signUp({
-      email: fakeEmail,
-      password,
-      options: {
-        data: { display_name: displayName.trim() },
-        emailRedirectTo: undefined,
-      },
+    // Create user via server route (bypasses email confirmation)
+    const res = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName: displayName.trim(), password }),
     })
 
-    if (signUpErr) {
-      if (signUpErr.message.includes('already registered')) {
-        setError('That name is already taken. Choose a different one.')
-      } else {
-        setError(signUpErr.message)
-      }
+    const data = await res.json()
+
+    if (!res.ok) {
+      setError(data.error ?? 'Something went wrong. Try again.')
       setLoading(false)
       return
     }
 
-    // Auto-sign in after registration
-    await supabase.auth.signInWithPassword({ email: fakeEmail, password })
+    // Sign in immediately after creation
+    const supabase  = createClient()
+    const { error: signInErr } = await supabase.auth.signInWithPassword({
+      email: data.email,
+      password,
+    })
+
+    if (signInErr) {
+      setError('Account created but sign-in failed. Try signing in manually.')
+      setLoading(false)
+      return
+    }
+
     router.push('/')
     router.refresh()
     setLoading(false)
