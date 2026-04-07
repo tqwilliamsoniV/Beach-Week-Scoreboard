@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from 'next'
+import { PlayerProvider } from '@/components/PlayerProvider'
 import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Beach Week Scoreboard',
   description: 'Family beach trip game tracker with live leaderboard',
-  manifest: '/manifest.json',
 }
 
 export const viewport: Viewport = {
@@ -17,7 +17,11 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="h-full">
-      <body className="h-full min-h-screen bg-sky-50">{children}</body>
+      <body className="h-full min-h-screen bg-sky-50">
+        <PlayerProvider>
+          {children}
+        </PlayerProvider>
+      </body>
     </html>
   )
 }

@@ -1,4 +1,4 @@
-import type { ResultEntry, Game, PlayerStats, User } from '@/types'
+import type { ResultEntry, Game, PlayerStats, Player } from '@/types'
 
 /** Points a player earns based on placement and game weight */
 export function calcPlacementPoints(
@@ -57,7 +57,7 @@ export function calcAdjustedRate(
  * `results` must include `.games` and `.result_entries[].users`.
  */
 export function computeLeaderboard(
-  players: User[],
+  players: Player[],
   resultEntries: (ResultEntry & { game_result?: { game_id: string; played_at: string }; games?: Game })[],
   allGames: Map<string, Game>,
   prior = 0.4,

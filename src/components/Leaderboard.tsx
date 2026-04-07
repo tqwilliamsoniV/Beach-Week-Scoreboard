@@ -2,31 +2,25 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { User, ResultEntry, Game, PlayerStats, LeaderboardTab } from '@/types'
+import type { Player, ResultEntry, Game, PlayerStats, LeaderboardTab } from '@/types'
 import { calcAdjustedRate } from '@/lib/scoring'
 import { Spinner } from '@/components/ui/Spinner'
 import { Trophy, Flame, Swords, PlusCircle, ChevronRight } from 'lucide-react'
 
 const TABS: { id: LeaderboardTab; label: string; icon: React.ReactNode }[] = [
-  { id: 'champion', label: 'Champion',  icon: <Trophy size={16}  /> },
-  { id: 'ironman',  label: 'Iron Man',  icon: <Flame  size={16}  /> },
-  { id: 'mvp',      label: 'MVP',       icon: <Swords size={16}  /> },
+  { id: 'champion', label: 'Champion', icon: <Trophy size={16} /> },
+  { id: 'ironman',  label: 'Iron Man', icon: <Flame  size={16} /> },
+  { id: 'mvp',      label: 'MVP',      icon: <Swords size={16} /> },
 ]
 
-const BAYESIAN_PRIOR = 0.4
-const BAYESIAN_C     = 5.0
-
 function computeStats(
-  players: User[],
-  entries: (ResultEntry & { game_results: { game_id: string } })[],
+  players: Player[],
+  entries: (ResultEntry & { game_results: { game_id: string } | null })[],
   games: Game[],
-  minThreshold: number,
-  prior = BAYESIAN_PRIOR,
-  c = BAYESIAN_C
+  prior: number,
+  c: number
 ): PlayerStats[] {
   const gameMap = new Map(games.map(g => [g.id, g]))
-
-  // Group entries by result_id
   const byResult = new Map<string, typeof entries>()
   for (const e of entries) {
     if (!byResult.has(e.result_id)) byResult.set(e.result_id, [])
@@ -40,14 +34,13 @@ function computeStats(
     const gameId = group[0]?.game_results?.game_id
     const game   = gameId ? gameMap.get(gameId) : undefined
     if (!game) continue
-
     for (const entry of group) {
       const s = acc.get(entry.player_id)
       if (!s) continue
       s.games_played++
       if (entry.placement === 1) s.wins++
       s.total_points   += Number(entry.points_earned)
-      s.total_possible += Number(game.weight) // max possible = 1.0 × weight per game
+      s.total_possible += Number(game.weight)
     }
   }
 
@@ -75,9 +68,8 @@ export function Leaderboard() {
 
   const load = useCallback(async () => {
     const supabase = createClient()
-
     const [{ data: players }, { data: entries }, { data: games }, { data: settings }] = await Promise.all([
-      supabase.from('users').select('*').order('display_name'),
+      supabase.from('players').select('*').order('display_name'),
       supabase.from('result_entries').select('*, game_results(game_id)'),
       supabase.from('games').select('*').eq('is_active', true),
       supabase.from('settings').select('*'),
@@ -88,7 +80,7 @@ export function Leaderboard() {
     const c         = Number(settings?.find(s => s.key === 'bayesian_c')?.value ?? 5.0)
 
     setMinThreshold(threshold)
-    setStats(computeStats(players ?? [], (entries ?? []) as never, games ?? [], threshold, prior, c))
+    setStats(computeStats(players ?? [], (entries ?? []) as never, games ?? [], prior, c))
     setUpdatedAt(new Date())
     setLoading(false)
   }, [])
@@ -105,63 +97,48 @@ export function Leaderboard() {
   }, [load])
 
   const sorted = [...stats].sort((a, b) => {
-    if (tab === 'champion') {
-      // Eligible only — others shown but marked
-      return b.adjusted_win_rate - a.adjusted_win_rate
-    }
+    if (tab === 'champion') return b.adjusted_win_rate - a.adjusted_win_rate
     if (tab === 'ironman') {
       if (b.games_played !== a.games_played) return b.games_played - a.games_played
       return b.adjusted_win_rate - a.adjusted_win_rate
     }
-    // mvp
     return b.total_points - a.total_points
   })
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
       <div className="bg-gradient-to-r from-sky-600 to-sky-500 px-4 pt-12 pb-4 text-white">
         <h1 className="text-2xl font-bold">🏖️ Beach Week</h1>
         <p className="text-sky-100 text-sm">Live Leaderboard</p>
       </div>
 
-      {/* Tabs */}
       <div className="flex bg-white border-b border-slate-100 shadow-sm sticky top-0 z-10">
         {TABS.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-sm font-semibold transition-colors border-b-2
-              ${tab === t.id
-                ? 'border-sky-500 text-sky-600'
-                : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+              ${tab === t.id ? 'border-sky-500 text-sky-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
           >
             {t.icon} {t.label}
           </button>
         ))}
       </div>
 
-      {/* Content */}
       <div className="flex-1 overflow-y-auto pb-36">
         {loading ? (
-          <div className="flex justify-center items-center py-16">
-            <Spinner size={32} />
-          </div>
+          <div className="flex justify-center items-center py-16"><Spinner size={32} /></div>
         ) : sorted.length === 0 ? (
           <p className="text-center text-slate-400 py-16">No games logged yet. Start playing!</p>
         ) : (
           <ul className="divide-y divide-slate-100">
             {sorted.map((s, i) => {
-              const eligible = s.player.is_eligible && s.games_played >= minThreshold
               const ineligible = tab === 'champion' && (!s.player.is_eligible || s.games_played < minThreshold)
-
               return (
                 <li key={s.player.id}
                   onClick={() => router.push(`/player/${s.player.id}`)}
-                  className={`flex items-center gap-3 px-4 py-3.5 active:bg-slate-50 cursor-pointer
-                    ${ineligible ? 'opacity-50' : ''}`}
+                  className={`flex items-center gap-3 px-4 py-3.5 active:bg-slate-50 cursor-pointer ${ineligible ? 'opacity-50' : ''}`}
                 >
-                  {/* Rank */}
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0
                     ${i === 0 && !ineligible ? 'bg-amber-400 text-white' :
                       i === 1 && !ineligible ? 'bg-slate-300 text-slate-700' :
@@ -169,35 +146,19 @@ export function Leaderboard() {
                       'bg-slate-100 text-slate-500'}`}>
                     {i + 1}
                   </div>
-
-                  {/* Name */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800 truncate">
-                        {s.player.display_name}
-                      </span>
+                      <span className="font-semibold text-slate-800 truncate">{s.player.display_name}</span>
                       {ineligible && (
-                        <span className="text-xs bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded-full shrink-0">
-                          Ineligible
-                        </span>
+                        <span className="text-xs bg-slate-100 text-slate-400 px-1.5 py-0.5 rounded-full shrink-0">Ineligible</span>
                       )}
                     </div>
                     <span className="text-xs text-slate-400">{s.games_played} games played</span>
                   </div>
-
-                  {/* Stat */}
                   <div className="text-right shrink-0">
-                    {tab === 'champion' && (
-                      <span className="font-bold text-sky-700">
-                        {(s.adjusted_win_rate * 100).toFixed(1)}%
-                      </span>
-                    )}
-                    {tab === 'ironman' && (
-                      <span className="font-bold text-orange-500">{s.games_played}</span>
-                    )}
-                    {tab === 'mvp' && (
-                      <span className="font-bold text-violet-600">{s.total_points.toFixed(1)} pts</span>
-                    )}
+                    {tab === 'champion' && <span className="font-bold text-sky-700">{(s.adjusted_win_rate * 100).toFixed(1)}%</span>}
+                    {tab === 'ironman'  && <span className="font-bold text-orange-500">{s.games_played}</span>}
+                    {tab === 'mvp'      && <span className="font-bold text-violet-600">{s.total_points.toFixed(1)} pts</span>}
                   </div>
                   <ChevronRight size={16} className="text-slate-300 shrink-0" />
                 </li>
@@ -205,15 +166,11 @@ export function Leaderboard() {
             })}
           </ul>
         )}
-
         {updatedAt && (
-          <p className="text-center text-xs text-slate-300 py-4">
-            Updated {updatedAt.toLocaleTimeString()}
-          </p>
+          <p className="text-center text-xs text-slate-300 py-4">Updated {updatedAt.toLocaleTimeString()}</p>
         )}
       </div>
 
-      {/* Log a Game CTA */}
       <div className="fixed bottom-16 left-0 right-0 px-4 pb-3 bg-gradient-to-t from-sky-50 to-transparent pointer-events-none">
         <button
           onClick={() => router.push('/log-game')}
