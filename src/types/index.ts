@@ -21,12 +21,21 @@ export interface Game {
   created_at: string
 }
 
+export interface GameVariant {
+  id: string
+  game_id: string
+  label: string
+  sort_order: number
+  created_at: string
+}
+
 export interface GameResult {
   id: string
   game_id: string
   logged_by: string | null
   played_at: string
   note: string | null
+  variant_label: string | null
   created_at: string
   games?: Game
   result_entries?: ResultEntry[]

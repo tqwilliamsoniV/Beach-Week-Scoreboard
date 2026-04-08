@@ -2,7 +2,7 @@
 import { useState, useTransition, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { Game, Player } from '@/types'
+import type { Game, Player, GameVariant } from '@/types'
 import { CATEGORY_EMOJI } from '@/lib/scoring'
 import { useToast } from '@/components/ui/Toast'
 import { Modal } from '@/components/ui/Modal'
@@ -84,12 +84,28 @@ export function AdminPanel({
   const [settings, setSettings]       = useState(initialSettings)
   const [editingGame, setEditingGame] = useState<Partial<Game> | null>(null)
   const [editingPlayer, setEditingPlayer] = useState<Partial<Player> | null>(null)
+  const [variantsByGame, setVariantsByGame] = useState<Map<string, GameVariant[]>>(new Map())
+  const [newVariantLabel, setNewVariantLabel] = useState('')
   const [, startTransition]           = useTransition()
   const { show, ToastEl }             = useToast()
 
   useEffect(() => {
     setUnlocked(sessionStorage.getItem('beach_admin') === '1')
   }, [])
+
+  useEffect(() => {
+    if (!unlocked) return
+    supabase.from('game_variants').select('*').order('sort_order').then(({ data }) => {
+      if (!data) return
+      const map = new Map<string, GameVariant[]>()
+      for (const v of data) {
+        if (!map.has(v.game_id)) map.set(v.game_id, [])
+        map.get(v.game_id)!.push(v)
+      }
+      setVariantsByGame(map)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [unlocked])
 
   const supabase = createClient()
   const correctPin = settings.commissioner_pin ?? '1234'
@@ -167,6 +183,35 @@ export function AdminPanel({
     if (error) { show(error.message, 'error'); return }
     setGames(prev => prev.filter(g => g.id !== game.id))
     show('Game deleted.', 'success')
+  }
+
+  // ── VARIANTS ───────────────────────────────────────────────────────────────
+  async function addVariant(gameId: string) {
+    const label = newVariantLabel.trim()
+    if (!label) return
+    const existing = variantsByGame.get(gameId) ?? []
+    const { data, error } = await supabase
+      .from('game_variants')
+      .insert({ game_id: gameId, label, sort_order: existing.length })
+      .select()
+      .single()
+    if (error) { show(error.message, 'error'); return }
+    setVariantsByGame(prev => {
+      const next = new Map(prev)
+      next.set(gameId, [...(next.get(gameId) ?? []), data])
+      return next
+    })
+    setNewVariantLabel('')
+    show('Variant added!', 'success')
+  }
+
+  async function deleteVariant(variantId: string, gameId: string) {
+    await supabase.from('game_variants').delete().eq('id', variantId)
+    setVariantsByGame(prev => {
+      const next = new Map(prev)
+      next.set(gameId, (next.get(gameId) ?? []).filter(v => v.id !== variantId))
+      return next
+    })
   }
 
   // ── PLAYERS ────────────────────────────────────────────────────────────────
@@ -294,6 +339,7 @@ export function AdminPanel({
                       <p className="text-xs text-slate-400 mt-0.5">
                         {game.scoring_type === 'win_loss' ? 'Win/Loss' : game.scoring_type === 'placement' ? 'Full Placement' : 'Score/Margin'}
                         {' · '}Weight {game.weight}{game.notes ? ` · ${game.notes}` : ''}
+                        {(variantsByGame.get(game.id)?.length ?? 0) > 0 && ` · ${variantsByGame.get(game.id)!.length} variant${variantsByGame.get(game.id)!.length > 1 ? 's' : ''}`}
                       </p>
                     </div>
                     <div className="flex gap-1">
@@ -343,7 +389,7 @@ export function AdminPanel({
 
       {/* Edit Game Modal */}
       {editingGame && (
-        <Modal title={editingGame.id ? 'Edit Game' : 'Add Game'} onClose={() => setEditingGame(null)}>
+        <Modal title={editingGame.id ? 'Edit Game' : 'Add Game'} onClose={() => { setEditingGame(null); setNewVariantLabel('') }}>
           <div className="space-y-3">
             <div>
               <label className="block text-xs font-semibold text-slate-500 mb-1">Game Name *</label>
@@ -396,6 +442,44 @@ export function AdminPanel({
             <button onClick={saveGame} className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold py-3 rounded-xl mt-1">
               {editingGame.id ? 'Save Changes' : 'Add Game'}
             </button>
+
+            {/* Variants — only for saved games */}
+            {editingGame.id ? (
+              <div className="border-t border-slate-100 pt-4 mt-1">
+                <label className="block text-xs font-semibold text-slate-500 mb-1">Variants</label>
+                <p className="text-xs text-slate-400 mb-2">e.g. "to 11", "to 21", "30 min game"</p>
+                <div className="space-y-1.5 mb-2">
+                  {(variantsByGame.get(editingGame.id) ?? []).map(v => (
+                    <div key={v.id} className="flex items-center justify-between bg-slate-50 rounded-xl px-3 py-2">
+                      <span className="text-sm text-slate-700">{v.label}</span>
+                      <button onClick={() => deleteVariant(v.id, editingGame.id!)} className="text-red-400 hover:text-red-600 p-1">
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newVariantLabel}
+                    onChange={e => setNewVariantLabel(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && addVariant(editingGame.id!)}
+                    placeholder='e.g. "to 21"'
+                    className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-400"
+                  />
+                  <button
+                    onClick={() => addVariant(editingGame.id!)}
+                    className="bg-sky-100 hover:bg-sky-200 text-sky-700 font-semibold px-4 py-2 rounded-xl text-sm"
+                  >
+                    Add
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 border-t border-slate-100 pt-3 mt-1">
+                Save the game first, then edit it to add variants.
+              </p>
+            )}
           </div>
         </Modal>
       )}
