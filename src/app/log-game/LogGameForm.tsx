@@ -26,129 +26,51 @@ function groupByCategory(games: Game[]) {
   return map
 }
 
-// ─── Team Drag Board ──────────────────────────────────────────────────────────
-function TeamDragBoard({
+// ─── Team Assign Board (tap to move between teams) ───────────────────────────
+function TeamAssignBoard({
   teamA,
   teamB,
   getName,
-  onSwap,
+  onMove,
 }: {
   teamA: string[]
   teamB: string[]
   getName: (id: string) => string
-  onSwap: (id1: string, id2: string) => void
+  onMove: (id: string, toTeam: 'A' | 'B') => void
 }) {
-  const [dragging, setDragging] = useState<{ id: string; fromTeam: 'A' | 'B' } | null>(null)
-  const [hoverTarget, setHoverTarget] = useState<{ id: string; team: 'A' | 'B' } | null>(null)
-  const [ghostPos, setGhostPos] = useState<{ x: number; y: number } | null>(null)
-  const boardRef = useRef<HTMLDivElement>(null)
-
-  function handlePointerDown(e: React.PointerEvent, id: string, fromTeam: 'A' | 'B') {
-    e.preventDefault()
-    setDragging({ id, fromTeam })
-    setGhostPos({ x: e.clientX, y: e.clientY })
-  }
-
-  function handlePointerMove(e: React.PointerEvent) {
-    if (!dragging) return
-    e.preventDefault()
-    setGhostPos({ x: e.clientX, y: e.clientY })
-
-    const els = document.elementsFromPoint(e.clientX, e.clientY)
-    let found: { id: string; team: 'A' | 'B' } | null = null
-    for (const el of els) {
-      const pid = (el as HTMLElement).dataset?.playerId
-      const team = (el as HTMLElement).dataset?.team as 'A' | 'B' | undefined
-      if (pid && pid !== dragging.id && team && team !== dragging.fromTeam) {
-        found = { id: pid, team }
-        break
-      }
-    }
-    setHoverTarget(found)
-  }
-
-  function handlePointerUp() {
-    if (dragging && hoverTarget) {
-      onSwap(dragging.id, hoverTarget.id)
-    }
-    setDragging(null)
-    setHoverTarget(null)
-    setGhostPos(null)
-  }
-
-  const swapPreviewing = dragging !== null && hoverTarget !== null
-
   function renderColumn(team: 'A' | 'B') {
     const members = team === 'A' ? teamA : teamB
-    const chipBg = team === 'A' ? 'bg-sky-500' : 'bg-orange-500'
-    const colBorder = team === 'A' ? 'border-sky-200 bg-sky-50' : 'border-orange-200 bg-orange-50'
-    const headerColor = team === 'A' ? 'text-sky-600' : 'text-orange-600'
-    const incomingChipBg = team === 'A' ? 'bg-orange-300' : 'bg-sky-300'
+    const otherTeam: 'A' | 'B' = team === 'A' ? 'B' : 'A'
+    const chipBg    = team === 'A' ? 'bg-sky-500 active:bg-sky-600'     : 'bg-orange-500 active:bg-orange-600'
+    const colBorder = team === 'A' ? 'border-sky-200 bg-sky-50'         : 'border-orange-200 bg-orange-50'
+    const headerColor = team === 'A' ? 'text-sky-600'                   : 'text-orange-600'
+    const arrowLabel  = team === 'A' ? 'Move →'                         : '← Move'
 
     return (
-      <div className={`flex-1 rounded-2xl border-2 ${colBorder} p-3 min-h-[160px]`}>
+      <div className={`flex-1 rounded-2xl border-2 ${colBorder} p-3 min-h-[140px]`}>
         <p className={`text-xs font-bold ${headerColor} uppercase tracking-wider mb-3`}>
           {team === 'A' ? '🔵 Team A' : '🟠 Team B'}
         </p>
         <div className="space-y-2">
-          {members.map(pid => {
-            const isDraggingThis = dragging?.id === pid
-            const isDropTarget = swapPreviewing && hoverTarget?.id === pid
-            return (
-              <div
-                key={pid}
-                data-player-id={pid}
-                data-team={team}
-                onPointerDown={e => handlePointerDown(e, pid, team)}
-                style={{ touchAction: 'none' }}
-                className={`rounded-xl px-3 py-2.5 text-sm font-semibold ${chipBg} text-white cursor-grab select-none transition-all duration-150
-                  ${isDraggingThis ? 'opacity-25 scale-95' : ''}
-                  ${isDropTarget ? 'opacity-40 scale-95 ring-2 ring-white ring-offset-1' : ''}
-                `}
-              >
-                <span className="mr-1.5 opacity-50">⠿</span>{getName(pid)}
-              </div>
-            )
-          })}
-          {/* Preview: shows the dragged player's target arriving in this column */}
-          {swapPreviewing && dragging!.fromTeam === team && hoverTarget !== null && (
-            <div className={`rounded-xl px-3 py-2.5 text-sm font-semibold ${incomingChipBg} text-white opacity-75 select-none border-2 border-dashed border-white`}>
-              <span className="mr-1.5 opacity-50">⠿</span>{getName(hoverTarget.id)}
-            </div>
-          )}
+          {members.map(pid => (
+            <button
+              key={pid}
+              onClick={() => onMove(pid, otherTeam)}
+              className={`w-full rounded-xl px-3 py-2.5 text-sm font-semibold ${chipBg} text-white text-left flex items-center justify-between`}
+            >
+              <span>{getName(pid)}</span>
+              <span className="text-xs opacity-60 font-normal">{arrowLabel}</span>
+            </button>
+          ))}
         </div>
       </div>
     )
   }
 
   return (
-    <div
-      ref={boardRef}
-      className="relative"
-      style={{ touchAction: 'none', userSelect: 'none' }}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerUp}
-      onPointerCancel={handlePointerUp}
-    >
-      <div className="flex gap-3">
-        {renderColumn('A')}
-        {renderColumn('B')}
-      </div>
-
-      {/* Floating drag ghost */}
-      {dragging && ghostPos && (
-        <div
-          className={`fixed pointer-events-none z-50 rounded-xl px-3 py-2.5 text-sm font-semibold text-white shadow-2xl
-            ${dragging.fromTeam === 'A' ? 'bg-sky-500' : 'bg-orange-500'}`}
-          style={{
-            left: ghostPos.x,
-            top: ghostPos.y,
-            transform: 'translate(-50%, -50%) rotate(4deg)',
-          }}
-        >
-          <span className="mr-1.5 opacity-50">⠿</span>{getName(dragging.id)}
-        </div>
-      )}
+    <div className="flex gap-3">
+      {renderColumn('A')}
+      {renderColumn('B')}
     </div>
   )
 }
@@ -258,14 +180,13 @@ export function LogGameForm({
     setStep('results')
   }
 
-  function handleSwapTeams(id1: string, id2: string) {
-    const id1InA = teamA.includes(id1)
-    if (id1InA) {
-      setTeamA(prev => prev.map(p => (p === id1 ? id2 : p)))
-      setTeamB(prev => prev.map(p => (p === id2 ? id1 : p)))
+  function handleMoveToTeam(id: string, toTeam: 'A' | 'B') {
+    if (toTeam === 'A') {
+      setTeamA(prev => [...prev, id])
+      setTeamB(prev => prev.filter(p => p !== id))
     } else {
-      setTeamA(prev => prev.map(p => (p === id2 ? id1 : p)))
-      setTeamB(prev => prev.map(p => (p === id1 ? id2 : p)))
+      setTeamB(prev => [...prev, id])
+      setTeamA(prev => prev.filter(p => p !== id))
     }
   }
 
@@ -612,13 +533,13 @@ export function LogGameForm({
             {/* win_loss — team game (3+ players) */}
             {selectedGame.scoring_type === 'win_loss' && selectedPlayers.length > 2 && (
               <div>
-                <p className="text-sm font-semibold text-slate-600 mb-2">Assign teams — hold & drag to swap</p>
-                <p className="text-xs text-slate-400 mb-3">Auto-split alphabetically. Drag a name across to swap.</p>
-                <TeamDragBoard
+                <p className="text-sm font-semibold text-slate-600 mb-2">Assign teams</p>
+                <p className="text-xs text-slate-400 mb-3">Auto-split alphabetically. Tap a name to move them to the other team.</p>
+                <TeamAssignBoard
                   teamA={teamA}
                   teamB={teamB}
                   getName={getName}
-                  onSwap={handleSwapTeams}
+                  onMove={handleMoveToTeam}
                 />
                 <p className="text-sm font-semibold text-slate-600 mt-5 mb-3">Winning team</p>
                 <div className="flex gap-3">
